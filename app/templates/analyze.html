@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Analyze Email – EmailIQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Analyze Email</h1>
+  <p class="page-subtitle">Paste a customer email to see full NLP analysis and response suggestions.</p>
+</div>
+
+<div class="analyze-layout">
+  <!-- Input Form -->
+  <div class="analyze-form-card">
+    <h2 class="card-title">Email Input</h2>
+    {% if error %}
+      <div class="alert alert--error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('main.analyze') }}" id="analyzeForm">
+      <div class="form-group">
+        <label class="form-label">Sender Email</label>
+        <input type="email" name="sender" class="form-input" placeholder="customer@example.com"
+               value="{{ request.form.get('sender', '') }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Subject <span class="required">*</span></label>
+        <input type="text" name="subject" class="form-input" placeholder="e.g. My order arrived damaged"
+               value="{{ request.form.get('subject', '') }}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Body <span class="required">*</span></label>
+        <textarea name="body" class="form-textarea" rows="8"
+                  placeholder="Paste the full email body here...">{{ request.form.get('body', '') }}</textarea>
+      </div>
+      <button type="submit" class="btn btn--primary btn--full" id="analyzeBtn">
+        <span id="btnText">⚡ Analyze Email</span>
+      </button>
+    </form>
+
+    <!-- Sample Quick-Fills -->
+    <div class="samples-section">
+      <h3 class="samples-title">Try Sample Emails</h3>
+      <div class="sample-list">
+        {% for s in samples %}
+        <button class="sample-btn" onclick="fillSample('{{ s.sender }}', '{{ s.subject | replace("'", "\\'") }}', `{{ s.body | replace("`", "\\`") | replace("\\n", "\\n") | truncate(200) }}`)">
+          <span class="sample-label sample-label--{{ s.label | lower | replace(' ', '-') }}">{{ s.label }}</span>
+          {{ s.subject | truncate(45) }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Panel -->
+  {% if result %}
+  <div class="results-panel" id="results">
+    <h2 class="card-title">Analysis Results
+      <span class="result-id">#{{ result.id }}</span>
+    </h2>
+
+    <!-- Summary Row -->
+    <div class="result-summary">
+      <div class="result-badge-group">
+        <div class="result-badge">
+          <span class="rb-label">Category</span>
+          <span class="rb-value rb--category">{{ result.classification.category }}</span>
+        </div>
+        <div class="result-badge">
+          <span class="rb-label">Sentiment</span>
+          <span class="rb-value rb--sentiment rb--{{ result.sentiment.sentiment | lower }}">
+            {{ result.sentiment.label_emoji }} {{ result.sentiment.sentiment }}
+          </span>
+        </div>
+        <div class="result-badge">
+          <span class="rb-label">Priority</span>
+          <span class="rb-value rb--priority rb--{{ result.priority.priority | lower }}">
+            {{ result.priority.priority }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Cards -->
+    <div class="detail-grid">
+
+      <!-- Classification -->
+      <div class="detail-card">
+        <h3>📂 Classification</h3>
+        <div class="detail-row"><span>Category</span><strong>{{ result.classification.category }}</strong></div>
+        <div class="detail-row"><span>Confidence</span><strong>{{ (result.classification.confidence * 100) | int }}%</strong></div>
+        <div class="detail-row"><span>Method</span><small>{{ result.classification.method }}</small></div>
+        <div class="confidence-bars">
+          {% for cat, score in result.classification.all_scores.items() %}
+          <div class="conf-bar-row">
+            <span class="conf-label">{{ cat }}</span>
+            <div class="conf-bar-track">
+              <div class="conf-bar-fill" style="width: {{ (score * 100) | int }}%"></div>
+            </div>
+            <span class="conf-pct">{{ (score * 100) | int }}%</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Sentiment -->
+      <div class="detail-card">
+        <h3>💬 Sentiment Analysis</h3>
+        <div class="sentiment-display sentiment--{{ result.sentiment.sentiment | lower }}">
+          <span class="sentiment-emoji">{{ result.sentiment.label_emoji }}</span>
+          <span class="sentiment-word">{{ result.sentiment.sentiment }}</span>
+        </div>
+        <div class="detail-row"><span>Confidence</span><strong>{{ (result.sentiment.confidence * 100) | int }}%</strong></div>
+        <div class="detail-row"><span>Score</span><strong>{{ result.sentiment.score }}</strong></div>
+        <div class="detail-row"><span>Method</span><small>{{ result.sentiment.method }}</small></div>
+      </div>
+
+      <!-- Priority -->
+      <div class="detail-card">
+        <h3>🔥 Priority Detection</h3>
+        <div class="priority-display priority--{{ result.priority.priority | lower }}">
+          {{ result.priority.priority }} Priority
+        </div>
+        <div class="detail-row"><span>Score</span><strong>{{ result.priority.priority_score }} / 100</strong></div>
+        {% if result.priority.triggers %}
+        <div class="triggers">
+          <span class="triggers-label">Triggers:</span>
+          {% for t in result.priority.triggers %}
+          <span class="trigger-tag">{{ t }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Preprocessing -->
+      <div class="detail-card">
+        <h3>🔧 Preprocessing</h3>
+        <div class="detail-row"><span>Timestamp</span><small>{{ result.timestamp }}</small></div>
+        <div class="detail-row"><span>Token Count</span><strong>{{ result.preprocessed.token_count }}</strong></div>
+        <div class="cleaned-text">
+          <span class="ct-label">Cleaned Text:</span>
+          <p class="ct-body">{{ result.preprocessed.cleaned_text | truncate(200) }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Response Suggestions -->
+    <div class="suggestions-section">
+      <h3>✉️ Suggested Responses</h3>
+      {% for s in result.suggestions %}
+      <div class="suggestion-card">
+        <div class="suggestion-header">
+          <span class="suggestion-title">{{ s.title }}</span>
+          <button class="btn btn--copy" onclick="copyResponse(this)">Copy</button>
+        </div>
+        <div class="tone-note">{{ s.tone_note }}</div>
+        <pre class="suggestion-body">{{ s.body }}</pre>
+      </div>
+      {% endfor %}
+    </div>
+
+  </div>
+  {% else %}
+  <div class="results-placeholder">
+    <div class="placeholder-icon">🤖</div>
+    <p>Analysis results will appear here after you submit an email.</p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function fillSample(sender, subject, body) {
+  document.querySelector('[name="sender"]').value = sender;
+  document.querySelector('[name="subject"]').value = subject;
+  document.querySelector('[name="body"]').value = body;
+}
+
+document.getElementById('analyzeForm').addEventListener('submit', function() {
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  document.getElementById('btnText').textContent = '⚙️ Analyzing...';
+});
+
+function copyResponse(btn) {
+  const body = btn.closest('.suggestion-card').querySelector('.suggestion-body').textContent;
+  navigator.clipboard.writeText(body).then(() => {
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+
+{% if result %}
+document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+{% endif %}
+</script>
+{% endblock %}

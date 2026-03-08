@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – EmailIQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Email Dashboard</h1>
+    <p class="page-subtitle">{{ total }} total emails analyzed</p>
+  </div>
+  <div class="page-actions">
+    <button onclick="loadSamples()" class="btn btn--outline">Load Samples</button>
+    <button onclick="clearEmails()" class="btn btn--danger">Clear All</button>
+    <a href="{{ url_for('main.analyze') }}" class="btn btn--primary">+ Analyze New</a>
+  </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-grid">
+  <div class="stat-card stat-card--blue">
+    <div class="stat-num">{{ stats.total }}</div>
+    <div class="stat-label">Total Emails</div>
+  </div>
+  <div class="stat-card stat-card--red">
+    <div class="stat-num">{{ stats.high }}</div>
+    <div class="stat-label">High Priority</div>
+  </div>
+  <div class="stat-card stat-card--amber">
+    <div class="stat-num">{{ stats.medium }}</div>
+    <div class="stat-label">Medium Priority</div>
+  </div>
+  <div class="stat-card stat-card--green">
+    <div class="stat-num">{{ stats.low }}</div>
+    <div class="stat-label">Low Priority</div>
+  </div>
+  <div class="stat-card stat-card--rose">
+    <div class="stat-num">{{ stats.negative }}</div>
+    <div class="stat-label">Negative</div>
+  </div>
+  <div class="stat-card stat-card--slate">
+    <div class="stat-num">{{ stats.neutral }}</div>
+    <div class="stat-label">Neutral</div>
+  </div>
+  <div class="stat-card stat-card--teal">
+    <div class="stat-num">{{ stats.positive }}</div>
+    <div class="stat-label">Positive</div>
+  </div>
+</div>
+
+<!-- Category Breakdown -->
+{% if stats.categories %}
+<div class="category-breakdown">
+  {% for cat, count in stats.categories.items() %}
+  <div class="cat-chip">
+    <span class="cat-name">{{ cat }}</span>
+    <span class="cat-count">{{ count }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="filter-bar">
+  <form method="GET" action="{{ url_for('main.dashboard') }}" class="filter-form">
+    <div class="filter-group">
+      <label>Category</label>
+      <select name="category" class="filter-select" onchange="this.form.submit()">
+        <option value="All" {% if filter_category == 'All' %}selected{% endif %}>All Categories</option>
+        {% for cat in categories %}
+        <option value="{{ cat }}" {% if filter_category == cat %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Priority</label>
+      <select name="priority" class="filter-select" onchange="this.form.submit()">
+        <option value="All" {% if filter_priority == 'All' %}selected{% endif %}>All Priorities</option>
+        <option value="High" {% if filter_priority == 'High' %}selected{% endif %}>High</option>
+        <option value="Medium" {% if filter_priority == 'Medium' %}selected{% endif %}>Medium</option>
+        <option value="Low" {% if filter_priority == 'Low' %}selected{% endif %}>Low</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Sentiment</label>
+      <select name="sentiment" class="filter-select" onchange="this.form.submit()">
+        <option value="All" {% if filter_sentiment == 'All' %}selected{% endif %}>All Sentiments</option>
+        <option value="Positive" {% if filter_sentiment == 'Positive' %}selected{% endif %}>Positive 😊</option>
+        <option value="Neutral" {% if filter_sentiment == 'Neutral' %}selected{% endif %}>Neutral 😐</option>
+        <option value="Negative" {% if filter_sentiment == 'Negative' %}selected{% endif %}>Negative 😠</option>
+      </select>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline btn--sm">Reset</a>
+  </form>
+</div>
+
+<!-- Email Table -->
+{% if emails %}
+<div class="email-table-wrap">
+  <table class="email-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Time</th>
+        <th>Sender</th>
+        <th>Subject</th>
+        <th>Category</th>
+        <th>Sentiment</th>
+        <th>Priority</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for email in emails %}
+      <tr class="email-row email-row--{{ email.priority.priority | lower }}" onclick="toggleDetail('detail-{{ loop.index }}')">
+        <td><code class="email-id">#{{ email.id }}</code></td>
+        <td><small>{{ email.timestamp }}</small></td>
+        <td class="email-sender">{{ email.sender | truncate(25) }}</td>
+        <td class="email-subject">{{ email.subject | truncate(50) }}</td>
+        <td><span class="badge badge--cat">{{ email.classification.category }}</span></td>
+        <td>
+          <span class="badge badge--sent badge--{{ email.sentiment.sentiment | lower }}">
+            {{ email.sentiment.label_emoji }} {{ email.sentiment.sentiment }}
+          </span>
+        </td>
+        <td>
+          <span class="badge badge--pri badge--pri-{{ email.priority.priority | lower }}">
+            {{ email.priority.priority }}
+          </span>
+        </td>
+        <td><button class="btn btn--sm btn--outline" onclick="event.stopPropagation(); toggleDetail('detail-{{ loop.index }}')">Details</button></td>
+      </tr>
+      <!-- Expandable Detail Row -->
+      <tr id="detail-{{ loop.index }}" class="detail-row" style="display:none;">
+        <td colspan="8">
+          <div class="detail-expand">
+            <div class="de-cols">
+              <div class="de-col">
+                <strong>Email Body</strong>
+                <p>{{ email.body | truncate(300) }}</p>
+              </div>
+              <div class="de-col">
+                <strong>NLP Insights</strong>
+                <div class="de-tags">
+                  <span>Tokens: {{ email.preprocessed.token_count }}</span>
+                  <span>Confidence: {{ (email.classification.confidence * 100) | int }}%</span>
+                  <span>Priority Score: {{ email.priority.priority_score }}/100</span>
+                </div>
+                {% if email.priority.triggers %}
+                <div class="de-triggers">
+                  Triggers:
+                  {% for t in email.priority.triggers %}
+                  <span class="trigger-tag">{{ t }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+              </div>
+              <div class="de-col">
+                <strong>Suggested Response</strong>
+                {% if email.suggestions %}
+                <pre class="de-response">{{ email.suggestions[0].body | truncate(400) }}</pre>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">📭</div>
+  <h3>No emails found</h3>
+  <p>
+    {% if filter_category != 'All' or filter_priority != 'All' or filter_sentiment != 'All' %}
+    No emails match your current filters. <a href="{{ url_for('main.dashboard') }}">Reset filters</a>
+    {% else %}
+    No emails analyzed yet. <a href="{{ url_for('main.analyze') }}">Analyze your first email</a> or
+    <button onclick="loadSamples()" class="btn btn--outline btn--sm">load sample data</button>.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
+<script>
+function toggleDetail(id) {
+  const row = document.getElementById(id);
+  row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+
+async function loadSamples() {
+  const btn = event.target;
+  btn.textContent = "Loading...";
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/load-samples", { method: "POST" });
+    const data = await res.json();
+    alert(data.message);
+    window.location.reload();
+  } catch (e) {
+    alert("Error loading samples");
+    btn.disabled = false;
+  }
+}
+
+async function clearEmails() {
+  if (!confirm("Clear all analyzed emails? This cannot be undone.")) return;
+  const res = await fetch("/api/clear", { method: "POST" });
+  window.location.reload();
+}
+</script>
+{% endblock %}
