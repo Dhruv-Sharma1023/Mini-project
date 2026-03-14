@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Audit Log – EmailIQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Database Audit Log</h1>
+    <p class="page-subtitle">Last {{ logs | length }} database write operations</p>
+  </div>
+  <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline">← Dashboard</a>
+</div>
+
+{% if logs %}
+<div class="email-table-wrap">
+  <table class="email-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Timestamp</th>
+        <th>Action</th>
+        <th>Email ID</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td><code>{{ log.id }}</code></td>
+        <td><small>{{ log.created_at }}</small></td>
+        <td>
+          <span class="badge
+            {% if log.action == 'INSERT' %}badge--green
+            {% elif log.action == 'DELETE' %}badge--red
+            {% elif log.action == 'CLEAR' %}badge--red
+            {% else %}badge--blue{% endif %}">
+            {{ log.action }}
+          </span>
+        </td>
+        <td><code class="email-id">{{ log.email_id or '—' }}</code></td>
+        <td><small>{{ log.details or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">📋</div>
+  <h3>No audit entries yet</h3>
+  <p>Database actions will appear here once emails are analyzed or deleted.</p>
+</div>
+{% endif %}
+{% endblock %}
