@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Email #{{ email.id }} – EmailIQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Email Detail <span class="result-id">#{{ email.id }}</span></h1>
+    <p class="page-subtitle">{{ email.timestamp }} &nbsp;·&nbsp; {{ email.sender }}</p>
+  </div>
+  <div class="page-actions">
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline">← Dashboard</a>
+    <button onclick="deleteEmail('{{ email.id }}')" class="btn btn--danger">Delete</button>
+  </div>
+</div>
+
+<!-- Summary Row -->
+<div class="result-summary" style="margin-bottom:1.5rem;">
+  <div class="result-badge-group">
+    <div class="result-badge">
+      <span class="rb-label">Category</span>
+      <span class="rb-value rb--category">{{ email.classification.category }}</span>
+    </div>
+    <div class="result-badge">
+      <span class="rb-label">Sentiment</span>
+      <span class="rb-value rb--sentiment rb--{{ email.sentiment.sentiment | lower }}">
+        {{ email.sentiment.label_emoji }} {{ email.sentiment.sentiment }}
+      </span>
+    </div>
+    <div class="result-badge">
+      <span class="rb-label">Priority</span>
+      <span class="rb-value rb--priority rb--{{ email.priority.priority | lower }}">
+        {{ email.priority.priority }}
+      </span>
+    </div>
+    <div class="result-badge">
+      <span class="rb-label">Confidence</span>
+      <span class="rb-value">{{ (email.classification.confidence * 100) | int }}%</span>
+    </div>
+    <div class="result-badge">
+      <span class="rb-label">Priority Score</span>
+      <span class="rb-value">{{ email.priority.priority_score }} / 100</span>
+    </div>
+  </div>
+</div>
+
+<div class="detail-grid" style="grid-template-columns:1fr 1fr 1fr; margin-bottom:1.5rem;">
+
+  <!-- Email Content -->
+  <div class="detail-card" style="grid-column: 1 / -1;">
+    <h3>📧 Email Content</h3>
+    <div class="detail-row"><span>Subject</span><strong>{{ email.subject }}</strong></div>
+    <div class="detail-row"><span>Sender</span><small>{{ email.sender }}</small></div>
+    <div class="detail-row"><span>Received</span><small>{{ email.timestamp }}</small></div>
+    <div style="margin-top:0.75rem; padding:1rem; background:var(--bg-deep); border-radius:8px; font-size:0.9rem; line-height:1.7; color:var(--text-primary); white-space:pre-wrap;">{{ email.body }}</div>
+  </div>
+
+  <!-- Classification -->
+  <div class="detail-card">
+    <h3>📂 Classification</h3>
+    <div class="detail-row"><span>Category</span><strong>{{ email.classification.category }}</strong></div>
+    <div class="detail-row"><span>Method</span><small>{{ email.classification.method }}</small></div>
+    <div class="confidence-bars" style="margin-top:0.75rem;">
+      {% for cat, score in email.classification.all_scores.items() %}
+      <div class="conf-bar-row">
+        <span class="conf-label">{{ cat }}</span>
+        <div class="conf-bar-track">
+          <div class="conf-bar-fill" style="width:{{ (score * 100)|int }}%"></div>
+        </div>
+        <span class="conf-pct">{{ (score * 100)|int }}%</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Sentiment -->
+  <div class="detail-card">
+    <h3>💬 Sentiment</h3>
+    <div class="sentiment-display sentiment--{{ email.sentiment.sentiment | lower }}">
+      <span class="sentiment-emoji">{{ email.sentiment.label_emoji }}</span>
+      <span class="sentiment-word">{{ email.sentiment.sentiment }}</span>
+    </div>
+    <div class="detail-row"><span>Score</span><strong>{{ email.sentiment.score }}</strong></div>
+    <div class="detail-row"><span>Confidence</span><strong>{{ (email.sentiment.confidence * 100)|int }}%</strong></div>
+    <div class="detail-row"><span>Method</span><small>{{ email.sentiment.method }}</small></div>
+  </div>
+
+  <!-- Priority -->
+  <div class="detail-card">
+    <h3>🔥 Priority</h3>
+    <div class="priority-display priority--{{ email.priority.priority | lower }}">{{ email.priority.priority }} Priority</div>
+    <div class="detail-row"><span>Score</span><strong>{{ email.priority.priority_score }} / 100</strong></div>
+    {% if email.priority.triggers %}
+    <div class="triggers" style="margin-top:0.5rem;">
+      <span class="triggers-label">Triggers:</span><br>
+      {% for t in email.priority.triggers %}
+      <span class="trigger-tag">{{ t }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Preprocessing -->
+  <div class="detail-card">
+    <h3>🔧 Preprocessing</h3>
+    <div class="detail-row"><span>Tokens</span><strong>{{ email.preprocessed.token_count }}</strong></div>
+    <div class="cleaned-text" style="margin-top:0.75rem;">
+      <span class="ct-label">Cleaned text:</span>
+      <p class="ct-body">{{ email.preprocessed.cleaned_text | truncate(300) }}</p>
+    </div>
+  </div>
+</div>
+
+<!-- Response Suggestions -->
+<div class="suggestions-section">
+  <h3>✉️ Suggested Responses</h3>
+  {% for s in email.suggestions %}
+  <div class="suggestion-card">
+    <div class="suggestion-header">
+      <span class="suggestion-title">{{ s.title }}</span>
+      <button class="btn btn--copy" onclick="copyResponse(this)">Copy</button>
+    </div>
+    <div class="tone-note">{{ s.tone_note }}</div>
+    <pre class="suggestion-body">{{ s.body }}</pre>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+function copyResponse(btn) {
+  const body = btn.closest('.suggestion-card').querySelector('.suggestion-body').textContent;
+  navigator.clipboard.writeText(body).then(() => {
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+async function deleteEmail(id) {
+  if (!confirm(`Delete email #${id}? This cannot be undone.`)) return;
+  const res = await fetch(`/api/emails/${id}`, { method: 'DELETE' });
+  if (res.ok) window.location.href = '/dashboard';
+  else alert('Delete failed');
+}
+</script>
+{% endblock %}
