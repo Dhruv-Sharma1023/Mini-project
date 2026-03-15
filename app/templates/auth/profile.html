@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}My Profile – EmailIQ{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1 class="page-title">My Profile</h1><p class="page-subtitle">Manage your account settings</p></div>
+  <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline">← Dashboard</a>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; max-width:900px;">
+
+  <!-- Account Info -->
+  <div class="detail-card">
+    <h3 style="font-family:var(--font-head);font-size:1rem;margin-bottom:1rem;">👤 Account Information</h3>
+    <div class="detail-row"><span>Username</span><strong>{{ user.username }}</strong></div>
+    <div class="detail-row"><span>Display Name</span><strong>{{ user.full_name or '—' }}</strong></div>
+    <div class="detail-row"><span>Role</span>
+      <span class="badge {% if user.role == 'admin' %}badge--red{% else %}badge--blue{% endif %}">{{ user.role }}</span>
+    </div>
+    <div class="detail-row"><span>Joined</span><small>{{ user.created_at }}</small></div>
+    <div class="detail-row"><span>Last Login</span><small>{{ user.last_login or 'Never' }}</small></div>
+
+    <form method="POST" style="margin-top:1.25rem; border-top:1px solid var(--border); padding-top:1rem;">
+      <input type="hidden" name="action" value="update_name">
+      <div class="form-group">
+        <label class="form-label">Update Display Name</label>
+        <input type="text" name="full_name" class="form-input" value="{{ user.full_name or '' }}" placeholder="Your full name">
+      </div>
+      <button type="submit" class="btn btn--primary btn--sm">Save Name</button>
+    </form>
+  </div>
+
+  <!-- Change Password -->
+  <div class="detail-card">
+    <h3 style="font-family:var(--font-head);font-size:1rem;margin-bottom:1rem;">🔒 Change Password</h3>
+    {% if error %}<div class="alert alert--error" style="margin-bottom:1rem;">{{ error }}</div>{% endif %}
+    {% if success %}<div style="background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);color:var(--success);padding:10px 14px;border-radius:var(--radius);margin-bottom:1rem;font-size:.9rem;">✓ {{ success }}</div>{% endif %}
+    <form method="POST">
+      <input type="hidden" name="action" value="change_password">
+      <div class="form-group">
+        <label class="form-label">Current Password</label>
+        <input type="password" name="current_password" class="form-input" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Password</label>
+        <input type="password" name="new_password" class="form-input" required minlength="6">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm New Password</label>
+        <input type="password" name="confirm_password" class="form-input" required>
+      </div>
+      <button type="submit" class="btn btn--primary">Update Password</button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In – EmailIQ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--bg-deep); }
+    .auth-wrap  { width:100%; max-width:420px; padding:2rem 1.5rem; }
+    .auth-brand { text-align:center; margin-bottom:2.5rem; }
+    .auth-brand .icon { font-size:2.8rem; display:block; margin-bottom:.5rem; }
+    .auth-brand h1 { font-family:var(--font-head); font-size:1.9rem; color:var(--text-primary); }
+    .auth-brand p  { color:var(--text-muted); font-size:.9rem; margin-top:.25rem; }
+    .auth-card  { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:2rem; }
+    .auth-card h2 { font-family:var(--font-head); font-size:1.15rem; margin-bottom:1.5rem; }
+    .form-group { margin-bottom:1.2rem; }
+    .form-label { display:block; font-size:.85rem; color:var(--text-muted); font-weight:500; margin-bottom:6px; }
+    .form-input { width:100%; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius);
+                  padding:10px 14px; color:var(--text-primary); font-family:var(--font-body); font-size:.95rem;
+                  transition:border-color .15s; }
+    .form-input:focus { outline:none; border-color:var(--accent); }
+    .btn-submit { width:100%; padding:11px; background:var(--accent); color:#0d1117; border:none;
+                  border-radius:var(--radius); font-size:1rem; font-weight:600; cursor:pointer;
+                  font-family:var(--font-body); transition:background .15s; margin-top:.25rem; }
+    .btn-submit:hover { background:#79b8ff; }
+    .alert-error { background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.3); color:#f85149;
+                   padding:10px 14px; border-radius:var(--radius); font-size:.9rem; margin-bottom:1rem; }
+    .flash-msg  { padding:10px 14px; border-radius:var(--radius); font-size:.9rem; margin-bottom:1rem; }
+    .flash-success { background:rgba(63,185,80,.1);  border:1px solid rgba(63,185,80,.3);  color:#3fb950; }
+    .flash-info    { background:rgba(88,166,255,.1); border:1px solid rgba(88,166,255,.3); color:var(--accent); }
+    .flash-warning { background:rgba(210,153,34,.1); border:1px solid rgba(210,153,34,.3); color:var(--warning); }
+    .auth-footer { text-align:center; margin-top:1.25rem; font-size:.88rem; color:var(--text-muted); }
+    .auth-footer a { color:var(--accent); text-decoration:none; font-weight:500; }
+    .auth-footer a:hover { text-decoration:underline; }
+    .pw-wrapper { position:relative; }
+    .pw-toggle  { position:absolute; right:12px; top:50%; transform:translateY(-50%);
+                  background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.85rem; }
+    .pw-toggle:hover { color:var(--text-primary); }
+  </style>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-brand">
+    <span class="icon">⚡</span>
+    <h1>EmailIQ</h1>
+    <p>Customer Service Email Intelligence</p>
+  </div>
+
+  <div class="auth-card">
+    <h2>Sign In to Your Account</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="flash-msg flash-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    {% if error %}
+      <div class="alert-error">⚠ {{ error }}</div>
+    {% endif %}
+
+    <form method="POST" autocomplete="on">
+      <div class="form-group">
+        <label class="form-label" for="username">Username</label>
+        <input type="text" id="username" name="username" class="form-input"
+               placeholder="Enter your username" autocomplete="username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <div class="pw-wrapper">
+          <input type="password" id="password" name="password" class="form-input"
+                 placeholder="Enter your password" autocomplete="current-password" required>
+          <button type="button" class="pw-toggle" onclick="togglePw('password', this)">Show</button>
+        </div>
+      </div>
+      <button type="submit" class="btn-submit">Sign In →</button>
+    </form>
+  </div>
+
+  <div class="auth-footer">
+    Don't have an account?
+    <a href="{{ url_for('auth.register') }}">Create one here</a>
+  </div>
+</div>
+
+<script>
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.textContent = show ? 'Hide' : 'Show';
+}
+</script>
+</body>
+</html>
