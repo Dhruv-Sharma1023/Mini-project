@@ -1,427 +1,240 @@
 """
-Email Repository (Data Access Object)
----------------------------------------
-All database read/write operations for emails and related data.
-Routes and services interact ONLY through this repository —
-no raw SQL outside this module.
-
-Public API:
-    EmailRepository.save(result_dict)         → str  (email_id)
-    EmailRepository.get_by_id(email_id)       → dict | None
-    EmailRepository.get_all(filters, sort)    → list[dict]
-    EmailRepository.delete(email_id)          → bool
-    EmailRepository.delete_all()              → int  (rows deleted)
-    EmailRepository.get_stats()               → dict
-    EmailRepository.search(query)             → list[dict]
-    EmailRepository.get_recent(limit)         → list[dict]
-    EmailRepository.count()                   → int
+Repository — all database read/write for emails AND users.
+No raw SQL anywhere outside this file.
 """
 
-import json
+import json, hashlib
 from datetime import datetime
 from typing import Optional
-
 from app.database.connection import db_session
 
 
-class EmailRepository:
-    """
-    Handles all persistence for analyzed emails.
+# ── User Repository ───────────────────────────────────────────────────────────
 
-    All methods accept an optional `db_path` kwarg for testing
-    against an isolated in-memory / temp database.
-    """
-
-    def __init__(self, db_path: str = None):
+class UserRepository:
+    def __init__(self, db_path=None):
         self.db_path = db_path
 
-    # ── Write Operations ──────────────────────────────────────────────────────
+    @staticmethod
+    def _hash(password: str) -> str:
+        return hashlib.sha256(password.encode()).hexdigest()
 
-    def save(self, result: dict) -> str:
-        """
-        Persist a full email analysis result to the database.
-
-        Args:
-            result: Dict produced by routes.analyze_email()
-
-        Returns:
-            The email id (str)
-        """
-        email_id = result["id"]
+    def get_by_id(self, user_id: int) -> Optional[dict]:
         with db_session(self.db_path) as conn:
-            # 1. emails table
+            row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+    def get_by_username(self, username: str) -> Optional[dict]:
+        with db_session(self.db_path) as conn:
+            row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        return dict(row) if row else None
+
+    def verify_password(self, username: str, password: str) -> Optional[dict]:
+        """Return user dict if credentials match, else None."""
+        user = self.get_by_username(username)
+        if user and user["password_hash"] == self._hash(password):
+            return user
+        return None
+
+    def update_last_login(self, user_id: int) -> None:
+        with db_session(self.db_path) as conn:
+            conn.execute(
+                "UPDATE users SET last_login=? WHERE id=?",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+            )
+
+    def get_all(self) -> list:
+        with db_session(self.db_path) as conn:
+            rows = conn.execute("SELECT id,username,role,full_name,created_at,last_login FROM users ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+    def create(self, username: str, password: str, role: str = "agent", full_name: str = "") -> int:
+        with db_session(self.db_path) as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username,password_hash,role,full_name) VALUES (?,?,?,?)",
+                (username, self._hash(password), role, full_name)
+            )
+        return cur.lastrowid
+
+    def change_password(self, user_id: int, new_password: str) -> None:
+        with db_session(self.db_path) as conn:
+            conn.execute("UPDATE users SET password_hash=? WHERE id=?",
+                         (self._hash(new_password), user_id))
+
+    def delete(self, user_id: int) -> bool:
+        with db_session(self.db_path) as conn:
+            cur = conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        return cur.rowcount > 0
+
+
+# ── Email Repository ──────────────────────────────────────────────────────────
+
+class EmailRepository:
+    def __init__(self, db_path=None):
+        self.db_path = db_path
+
+    def save(self, result: dict, user_id: int = None) -> str:
+        eid = result["id"]
+        with db_session(self.db_path) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO emails
-                   (id, sender, subject, body, cleaned_text, token_count, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    email_id,
-                    result.get("sender", ""),
-                    result.get("subject", ""),
-                    result.get("body", ""),
-                    result["preprocessed"]["cleaned_text"],
-                    result["preprocessed"]["token_count"],
-                    result["timestamp"],
-                    result["timestamp"],
-                ),
+                   (id,sender,subject,body,cleaned_text,token_count,created_by,created_at,updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (eid, result.get("sender",""), result.get("subject",""),
+                 result.get("body",""), result["preprocessed"]["cleaned_text"],
+                 result["preprocessed"]["token_count"], user_id,
+                 result["timestamp"], result["timestamp"])
             )
-
-            # 2. classifications table
             clf = result["classification"]
             conn.execute(
-                """INSERT INTO classifications
-                   (email_id, category, confidence, method, all_scores)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    email_id,
-                    clf["category"],
-                    clf["confidence"],
-                    clf["method"],
-                    json.dumps(clf.get("all_scores", {})),
-                ),
+                "INSERT INTO classifications (email_id,category,confidence,method,all_scores) VALUES (?,?,?,?,?)",
+                (eid, clf["category"], clf["confidence"], clf["method"], json.dumps(clf.get("all_scores",{})))
             )
-
-            # 3. sentiments table
             sent = result["sentiment"]
             conn.execute(
-                """INSERT INTO sentiments
-                   (email_id, sentiment, score, confidence, label_emoji, method)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (
-                    email_id,
-                    sent["sentiment"],
-                    sent["score"],
-                    sent["confidence"],
-                    sent["label_emoji"],
-                    sent["method"],
-                ),
+                "INSERT INTO sentiments (email_id,sentiment,score,confidence,label_emoji,method) VALUES (?,?,?,?,?,?)",
+                (eid, sent["sentiment"], sent["score"], sent["confidence"], sent["label_emoji"], sent["method"])
             )
-
-            # 4. priorities table
             pri = result["priority"]
             conn.execute(
-                """INSERT INTO priorities
-                   (email_id, priority, priority_score, triggers, badge_color)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (
-                    email_id,
-                    pri["priority"],
-                    pri["priority_score"],
-                    json.dumps(pri.get("triggers", [])),
-                    pri["badge_color"],
-                ),
+                "INSERT INTO priorities (email_id,priority,priority_score,triggers,badge_color) VALUES (?,?,?,?,?)",
+                (eid, pri["priority"], pri["priority_score"], json.dumps(pri.get("triggers",[])), pri["badge_color"])
             )
-
-            # 5. suggestions table
-            for i, sug in enumerate(result.get("suggestions", [])):
+            for i, s in enumerate(result.get("suggestions",[])):
                 conn.execute(
-                    """INSERT INTO suggestions
-                       (email_id, title, body, tone_note, sort_order)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (email_id, sug["title"], sug["body"], sug.get("tone_note", ""), i),
+                    "INSERT INTO suggestions (email_id,title,body,tone_note,sort_order) VALUES (?,?,?,?,?)",
+                    (eid, s["title"], s["body"], s.get("tone_note",""), i)
                 )
+            self._log(conn, "INSERT", eid, user_id, f"Saved: {result.get('subject','')[:60]}")
+        return eid
 
-            # 6. audit log
-            self._log_action(conn, "INSERT", email_id, f"Saved email: {result.get('subject','')[:60]}")
-
-        return email_id
-
-    def delete(self, email_id: str) -> bool:
-        """
-        Delete a single email and all related records (cascade).
-
-        Returns:
-            True if a row was deleted, False if not found.
-        """
+    def delete(self, email_id: str, user_id: int = None) -> bool:
         with db_session(self.db_path) as conn:
-            cur = conn.execute("DELETE FROM emails WHERE id = ?", (email_id,))
-            deleted = cur.rowcount > 0
-            if deleted:
-                self._log_action(conn, "DELETE", email_id, "Single email deleted")
-        return deleted
+            cur = conn.execute("DELETE FROM emails WHERE id=?", (email_id,))
+            if cur.rowcount:
+                self._log(conn, "DELETE", email_id, user_id, "Deleted")
+        return cur.rowcount > 0
 
-    def delete_all(self) -> int:
-        """
-        Delete ALL emails and related records.
-
-        Returns:
-            Number of emails deleted.
-        """
+    def delete_all(self, user_id: int = None) -> int:
         with db_session(self.db_path) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
-            conn.execute("DELETE FROM emails")  # cascade deletes related rows
-            self._log_action(conn, "CLEAR", None, f"Cleared {count} emails")
-        return count
-
-    # ── Read Operations ───────────────────────────────────────────────────────
+            n = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
+            conn.execute("DELETE FROM emails")
+            self._log(conn, "CLEAR", None, user_id, f"Cleared {n} emails")
+        return n
 
     def get_by_id(self, email_id: str) -> Optional[dict]:
-        """Fetch a single fully-assembled email dict by ID."""
         with db_session(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
-            if not row:
-                return None
+            row = conn.execute("SELECT * FROM emails WHERE id=?", (email_id,)).fetchone()
+            if not row: return None
             return self._assemble(conn, dict(row))
 
-    def get_all(
-        self,
-        category: str = None,
-        priority: str = None,
-        sentiment: str = None,
-        sort_by: str = "priority",   # "priority" | "date_desc" | "date_asc"
-        limit: int = 500,
-        offset: int = 0,
-    ) -> list:
-        """
-        Fetch all emails with optional filters and sorting.
-
-        Args:
-            category:  Filter by category string (exact match)
-            priority:  Filter by priority string (exact match)
-            sentiment: Filter by sentiment string (exact match)
-            sort_by:   Sorting strategy
-            limit:     Max rows to return
-            offset:    Pagination offset
-
-        Returns:
-            List of fully-assembled email dicts
-        """
-        # Build JOIN query with optional WHERE clauses
-        where_clauses = []
-        params = []
-
-        if category:
-            where_clauses.append("c.category = ?")
-            params.append(category)
-        if priority:
-            where_clauses.append("p.priority = ?")
-            params.append(priority)
-        if sentiment:
-            where_clauses.append("s.sentiment = ?")
-            params.append(sentiment)
-
-        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-
-        sort_map = {
-            "priority": "CASE p.priority WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END ASC, e.created_at DESC",
+    def get_all(self, category=None, priority=None, sentiment=None,
+                sort_by="priority", limit=500, offset=0) -> list:
+        where, params = [], []
+        if category:  where.append("c.category=?");  params.append(category)
+        if priority:  where.append("p.priority=?");  params.append(priority)
+        if sentiment: where.append("s.sentiment=?"); params.append(sentiment)
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        order = {
+            "priority":  "CASE p.priority WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END ASC, e.created_at DESC",
             "date_desc": "e.created_at DESC",
             "date_asc":  "e.created_at ASC",
-        }
-        order_sql = sort_map.get(sort_by, sort_map["priority"])
-
-        sql = f"""
-            SELECT e.*
-            FROM emails e
-            JOIN classifications c ON c.email_id = e.id
-            JOIN sentiments      s ON s.email_id = e.id
-            JOIN priorities      p ON p.email_id = e.id
-            {where_sql}
-            ORDER BY {order_sql}
-            LIMIT ? OFFSET ?
-        """
+        }.get(sort_by, "e.created_at DESC")
+        sql = f"""SELECT e.* FROM emails e
+                  JOIN classifications c ON c.email_id=e.id
+                  JOIN sentiments      s ON s.email_id=e.id
+                  JOIN priorities      p ON p.email_id=e.id
+                  {where_sql} ORDER BY {order} LIMIT ? OFFSET ?"""
         params.extend([limit, offset])
-
         with db_session(self.db_path) as conn:
             rows = conn.execute(sql, params).fetchall()
-            return [self._assemble(conn, dict(row)) for row in rows]
+            return [self._assemble(conn, dict(r)) for r in rows]
 
-    def get_recent(self, limit: int = 10) -> list:
-        """Return the most recently added emails."""
-        return self.get_all(sort_by="date_desc", limit=limit)
-
-    def search(self, query: str, limit: int = 100) -> list:
-        """
-        Full-text search across subject, body, and sender fields.
-
-        Args:
-            query: Search string (case-insensitive)
-            limit: Max results
-
-        Returns:
-            List of matching email dicts
-        """
-        pattern = f"%{query}%"
-        sql = """
-            SELECT e.*
-            FROM emails e
-            WHERE e.subject LIKE ? OR e.body LIKE ? OR e.sender LIKE ?
-            ORDER BY e.created_at DESC
-            LIMIT ?
-        """
-        with db_session(self.db_path) as conn:
-            rows = conn.execute(sql, (pattern, pattern, pattern, limit)).fetchall()
-            return [self._assemble(conn, dict(row)) for row in rows]
-
-    def count(self, category: str = None, priority: str = None, sentiment: str = None) -> int:
-        """Return total email count with optional filters."""
-        where_parts = []
-        params = []
-
-        if category:
-            where_parts.append("c.category = ?")
-            params.append(category)
-        if priority:
-            where_parts.append("p.priority = ?")
-            params.append(priority)
-        if sentiment:
-            where_parts.append("s.sentiment = ?")
-            params.append(sentiment)
-
-        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-        sql = f"""
-            SELECT COUNT(DISTINCT e.id)
-            FROM emails e
-            LEFT JOIN classifications c ON c.email_id = e.id
-            LEFT JOIN sentiments      s ON s.email_id = e.id
-            LEFT JOIN priorities      p ON p.email_id = e.id
-            {where_sql}
-        """
+    def count(self, category=None, priority=None, sentiment=None) -> int:
+        where, params = [], []
+        if category:  where.append("c.category=?");  params.append(category)
+        if priority:  where.append("p.priority=?");  params.append(priority)
+        if sentiment: where.append("s.sentiment=?"); params.append(sentiment)
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        sql = f"""SELECT COUNT(DISTINCT e.id) FROM emails e
+                  LEFT JOIN classifications c ON c.email_id=e.id
+                  LEFT JOIN sentiments      s ON s.email_id=e.id
+                  LEFT JOIN priorities      p ON p.email_id=e.id
+                  {where_sql}"""
         with db_session(self.db_path) as conn:
             return conn.execute(sql, params).fetchone()[0]
 
-    def get_stats(self) -> dict:
-        """
-        Compute summary statistics for the dashboard.
-        All aggregations done in a single DB pass using SQL.
-        """
-        with db_session(self.db_path) as conn:
-            total = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
-
-            if total == 0:
-                return {
-                    "total": 0, "high": 0, "medium": 0, "low": 0,
-                    "positive": 0, "neutral": 0, "negative": 0,
-                    "categories": {}, "recent_high": [],
-                }
-
-            # Priority counts
-            pri_rows = conn.execute("""
-                SELECT priority, COUNT(*) as cnt
-                FROM priorities GROUP BY priority
-            """).fetchall()
-            pri_counts = {r["priority"]: r["cnt"] for r in pri_rows}
-
-            # Sentiment counts
-            sent_rows = conn.execute("""
-                SELECT sentiment, COUNT(*) as cnt
-                FROM sentiments GROUP BY sentiment
-            """).fetchall()
-            sent_counts = {r["sentiment"]: r["cnt"] for r in sent_rows}
-
-            # Category counts
-            cat_rows = conn.execute("""
-                SELECT category, COUNT(*) as cnt
-                FROM classifications GROUP BY category ORDER BY cnt DESC
-            """).fetchall()
-            categories = {r["category"]: r["cnt"] for r in cat_rows}
-
-            # Most recent high-priority emails (for home page alert)
-            recent_high_rows = conn.execute("""
-                SELECT e.id, e.subject, e.sender, e.created_at
-                FROM emails e
-                JOIN priorities p ON p.email_id = e.id
-                WHERE p.priority = 'High'
-                ORDER BY e.created_at DESC LIMIT 3
-            """).fetchall()
-
-        return {
-            "total": total,
-            "high": pri_counts.get("High", 0),
-            "medium": pri_counts.get("Medium", 0),
-            "low": pri_counts.get("Low", 0),
-            "positive": sent_counts.get("Positive", 0),
-            "neutral": sent_counts.get("Neutral", 0),
-            "negative": sent_counts.get("Negative", 0),
-            "categories": categories,
-            "recent_high": [dict(r) for r in recent_high_rows],
-        }
-
-    def get_audit_log(self, limit: int = 50) -> list:
-        """Return recent audit log entries."""
+    def search(self, query: str, limit: int = 100) -> list:
+        pat = f"%{query}%"
         with db_session(self.db_path) as conn:
             rows = conn.execute(
-                "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM emails WHERE subject LIKE ? OR body LIKE ? OR sender LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (pat, pat, pat, limit)
             ).fetchall()
+            return [self._assemble(conn, dict(r)) for r in rows]
+
+    def get_stats(self) -> dict:
+        with db_session(self.db_path) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
+            if not total:
+                return {"total":0,"high":0,"medium":0,"low":0,"positive":0,"neutral":0,"negative":0,"categories":{}}
+            pri   = {r["priority"]: r["cnt"] for r in conn.execute("SELECT priority,COUNT(*) cnt FROM priorities GROUP BY priority").fetchall()}
+            sent  = {r["sentiment"]: r["cnt"] for r in conn.execute("SELECT sentiment,COUNT(*) cnt FROM sentiments GROUP BY sentiment").fetchall()}
+            cats  = {r["category"]: r["cnt"] for r in conn.execute("SELECT category,COUNT(*) cnt FROM classifications GROUP BY category ORDER BY cnt DESC").fetchall()}
+        return {"total":total,"high":pri.get("High",0),"medium":pri.get("Medium",0),"low":pri.get("Low",0),
+                "positive":sent.get("Positive",0),"neutral":sent.get("Neutral",0),"negative":sent.get("Negative",0),
+                "categories":cats}
+
+    def get_audit_log(self, limit=50, user_id=None) -> list:
+        """
+        If user_id is given, return only that user's entries (agent view).
+        If user_id is None, return all entries (admin view).
+        """
+        with db_session(self.db_path) as conn:
+            if user_id is not None:
+                rows = conn.execute(
+                    """SELECT a.*, u.username FROM audit_log a
+                       LEFT JOIN users u ON u.id=a.user_id
+                       WHERE a.user_id = ?
+                       ORDER BY a.created_at DESC LIMIT ?""",
+                    (user_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT a.*, u.username FROM audit_log a
+                       LEFT JOIN users u ON u.id=a.user_id
+                       ORDER BY a.created_at DESC LIMIT ?""",
+                    (limit,)
+                ).fetchall()
         return [dict(r) for r in rows]
 
-    # ── Private Helpers ───────────────────────────────────────────────────────
-
-    def _assemble(self, conn: object, email_row: dict) -> dict:
-        """
-        Given a raw emails row, fetch related rows and assemble a
-        full result dict matching the format returned by analyze_email().
-        """
-        eid = email_row["id"]
-
-        clf_row = conn.execute(
-            "SELECT * FROM classifications WHERE email_id = ? LIMIT 1", (eid,)
-        ).fetchone()
-        sent_row = conn.execute(
-            "SELECT * FROM sentiments WHERE email_id = ? LIMIT 1", (eid,)
-        ).fetchone()
-        pri_row = conn.execute(
-            "SELECT * FROM priorities WHERE email_id = ? LIMIT 1", (eid,)
-        ).fetchone()
-        sug_rows = conn.execute(
-            "SELECT * FROM suggestions WHERE email_id = ? ORDER BY sort_order", (eid,)
-        ).fetchall()
-
-        classification = {}
-        if clf_row:
-            clf = dict(clf_row)
-            classification = {
-                "category": clf["category"],
-                "confidence": clf["confidence"],
-                "method": clf["method"],
-                "all_scores": json.loads(clf.get("all_scores", "{}")),
-            }
-
-        sentiment = {}
-        if sent_row:
-            s = dict(sent_row)
-            sentiment = {
-                "sentiment": s["sentiment"],
-                "score": s["score"],
-                "confidence": s["confidence"],
-                "label_emoji": s["label_emoji"],
-                "method": s["method"],
-            }
-
-        priority = {}
-        if pri_row:
-            p = dict(pri_row)
-            priority = {
-                "priority": p["priority"],
-                "priority_score": p["priority_score"],
-                "triggers": json.loads(p.get("triggers", "[]")),
-                "badge_color": p["badge_color"],
-            }
-
-        suggestions = [
-            {"title": s["title"], "body": s["body"], "tone_note": s["tone_note"]}
-            for s in sug_rows
-        ]
-
+    def _assemble(self, conn, row: dict) -> dict:
+        eid = row["id"]
+        clf  = conn.execute("SELECT * FROM classifications WHERE email_id=? LIMIT 1", (eid,)).fetchone()
+        sent = conn.execute("SELECT * FROM sentiments     WHERE email_id=? LIMIT 1", (eid,)).fetchone()
+        pri  = conn.execute("SELECT * FROM priorities     WHERE email_id=? LIMIT 1", (eid,)).fetchone()
+        sugs = conn.execute("SELECT * FROM suggestions    WHERE email_id=? ORDER BY sort_order", (eid,)).fetchall()
         return {
-            "id": eid,
-            "timestamp": email_row["created_at"],
-            "sender": email_row["sender"],
-            "subject": email_row["subject"],
-            "body": email_row["body"],
-            "preprocessed": {
-                "cleaned_text": email_row["cleaned_text"],
-                "token_count": email_row["token_count"],
-            },
-            "classification": classification,
-            "sentiment": sentiment,
-            "priority": priority,
-            "suggestions": suggestions,
+            "id": eid, "timestamp": row["created_at"], "sender": row["sender"],
+            "subject": row["subject"], "body": row["body"],
+            "preprocessed": {"cleaned_text": row["cleaned_text"], "token_count": row["token_count"]},
+            "classification": {
+                "category": clf["category"], "confidence": clf["confidence"],
+                "method": clf["method"], "all_scores": json.loads(clf["all_scores"])
+            } if clf else {},
+            "sentiment": {
+                "sentiment": sent["sentiment"], "score": sent["score"],
+                "confidence": sent["confidence"], "label_emoji": sent["label_emoji"],
+                "method": sent["method"]
+            } if sent else {},
+            "priority": {
+                "priority": pri["priority"], "priority_score": pri["priority_score"],
+                "triggers": json.loads(pri["triggers"]), "badge_color": pri["badge_color"]
+            } if pri else {},
+            "suggestions": [{"title":s["title"],"body":s["body"],"tone_note":s["tone_note"]} for s in sugs],
         }
 
     @staticmethod
-    def _log_action(conn, action: str, email_id: str = None, details: str = None):
-        """Write an entry to the audit_log table (within existing transaction)."""
-        conn.execute(
-            "INSERT INTO audit_log (action, email_id, details) VALUES (?, ?, ?)",
-            (action, email_id, details),
-        )
+    def _log(conn, action, email_id, user_id, details):
+        conn.execute("INSERT INTO audit_log (action,email_id,user_id,details) VALUES (?,?,?,?)",
+                     (action, email_id, user_id, details))
