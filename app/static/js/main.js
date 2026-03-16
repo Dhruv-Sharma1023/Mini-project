@@ -1,18 +1,18 @@
-document.addEventListener("DOMContentLoaded", () => {
-  // Confidence bar animations
-  document.querySelectorAll(".conf-bar-fill").forEach(bar => {
-    const w = bar.style.width; bar.style.width = "0%";
-    setTimeout(() => { bar.style.width = w; }, 200);
-  });
-  // Auto-dismiss flash messages
-  document.querySelectorAll(".flash").forEach(f => setTimeout(() => f.remove(), 5000));
-});
+/**
+ * EmailIQ – Main JavaScript
+ * Handles UI interactions and animations.
+ */
 
-// User dropdown toggle
-function toggleUserMenu() {
-  document.getElementById("userDropdown")?.classList.toggle("open");
-}
-document.addEventListener("click", e => {
-  if (!e.target.closest(".user-menu"))
-    document.getElementById("userDropdown")?.classList.remove("open");
+document.addEventListener("DOMContentLoaded", () => {
+  // Animate confidence bars on load
+  document.querySelectorAll(".conf-bar-fill").forEach(bar => {
+    const target = bar.style.width;
+    bar.style.width = "0%";
+    setTimeout(() => { bar.style.width = target; }, 200);
+  });
+
+  // Auto-dismiss flash messages
+  document.querySelectorAll(".flash").forEach(flash => {
+    setTimeout(() => flash.remove(), 4000);
+  });
 });
