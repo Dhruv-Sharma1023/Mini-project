@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – EmailIQ{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Email Dashboard</h1>
+    <p class="page-subtitle">{{ total }} total emails &nbsp;·&nbsp; showing {{ emails|length }} of {{ total_filtered }}</p>
+  </div>
+  <div class="page-actions">
+    <button onclick="loadSamples()" class="btn btn--outline">Load Samples</button>
+    <button onclick="clearEmails()" class="btn btn--danger">Clear All</button>
+    <a href="{{ url_for('main.analyze') }}" class="btn btn--primary">+ Analyze New</a>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card stat-card--blue"><div class="stat-num">{{ stats.total }}</div><div class="stat-label">Total Emails</div></div>
+  <div class="stat-card stat-card--red"><div class="stat-num">{{ stats.high }}</div><div class="stat-label">High Priority</div></div>
+  <div class="stat-card stat-card--amber"><div class="stat-num">{{ stats.medium }}</div><div class="stat-label">Medium</div></div>
+  <div class="stat-card stat-card--green"><div class="stat-num">{{ stats.low }}</div><div class="stat-label">Low Priority</div></div>
+  <div class="stat-card stat-card--rose"><div class="stat-num">{{ stats.negative }}</div><div class="stat-label">Negative</div></div>
+  <div class="stat-card stat-card--slate"><div class="stat-num">{{ stats.neutral }}</div><div class="stat-label">Neutral</div></div>
+  <div class="stat-card stat-card--teal"><div class="stat-num">{{ stats.positive }}</div><div class="stat-label">Positive</div></div>
+</div>
+
+{% if stats.categories %}
+<div class="category-breakdown">
+  {% for cat,count in stats.categories.items() %}
+  <div class="cat-chip"><span class="cat-name">{{ cat }}</span><span class="cat-count">{{ count }}</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Search + Filters -->
+<div class="filter-bar">
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="🔍 Search emails..." class="form-input" style="width:260px;">
+    <button onclick="runSearch()" class="btn btn--outline btn--sm">Search</button>
+    <button onclick="clearSearch()" class="btn btn--outline btn--sm" id="clearSearchBtn" style="display:none;">✕ Clear</button>
+  </div>
+  <form method="GET" action="{{ url_for('main.dashboard') }}" class="filter-form">
+    <div class="filter-group">
+      <label>Category</label>
+      <select name="category" class="filter-select" onchange="this.form.submit()">
+        <option value="All" {% if filter_category=='All' %}selected{% endif %}>All Categories</option>
+        {% for cat in categories %}<option value="{{ cat }}" {% if filter_category==cat %}selected{% endif %}>{{ cat }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Priority</label>
+      <select name="priority" class="filter-select" onchange="this.form.submit()">
+        <option value="All" {% if filter_priority=='All' %}selected{% endif %}>All Priorities</option>
+        <option value="High"   {% if filter_priority=='High'   %}selected{% endif %}>🔴 High</option>
+        <option value="Medium" {% if filter_priority=='Medium' %}selected{% endif %}>🟡 Medium</option>
+        <option value="Low"    {% if filter_priority=='Low'    %}selected{% endif %}>🟢 Low</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Sentiment</label>
+      <select name="sentiment" class="filter-select" onchange="this.form.submit()">
+        <option value="All"      {% if filter_sentiment=='All'      %}selected{% endif %}>All Sentiments</option>
+        <option value="Positive" {% if filter_sentiment=='Positive' %}selected{% endif %}>😊 Positive</option>
+        <option value="Neutral"  {% if filter_sentiment=='Neutral'  %}selected{% endif %}>😐 Neutral</option>
+        <option value="Negative" {% if filter_sentiment=='Negative' %}selected{% endif %}>😠 Negative</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Sort By</label>
+      <select name="sort" class="filter-select" onchange="this.form.submit()">
+        <option value="priority"  {% if sort_by=='priority'  %}selected{% endif %}>Priority ↑</option>
+        <option value="date_desc" {% if sort_by=='date_desc' %}selected{% endif %}>Newest First</option>
+        <option value="date_asc"  {% if sort_by=='date_asc'  %}selected{% endif %}>Oldest First</option>
+      </select>
+    </div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline btn--sm">Reset</a>
+    <a href="{{ url_for('main.audit_log_page') }}" class="btn btn--outline btn--sm">📋 Audit Log</a>
+  </form>
+</div>
+
+<!-- Search results panel -->
+<div id="searchResults" style="display:none;">
+  <div class="page-header" style="margin-bottom:1rem;"><h3 style="font-family:var(--font-head);">Search Results</h3></div>
+  <div id="searchResultsBody"></div>
+</div>
+
+<!-- Email table -->
+<div id="mainTable">
+{% if emails %}
+<div class="email-table-wrap">
+  <table class="email-table">
+    <thead><tr><th>ID</th><th>Time</th><th>Sender</th><th>Subject</th><th>Category</th><th>Sentiment</th><th>Priority</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for email in emails %}
+      <tr class="email-row email-row--{{ email.priority.priority|lower }}" id="row-{{ email.id }}">
+        <td><code class="email-id">#{{ email.id }}</code></td>
+        <td><small>{{ email.timestamp }}</small></td>
+        <td class="email-sender">{{ email.sender|truncate(25) }}</td>
+        <td class="email-subject">{{ email.subject|truncate(50) }}</td>
+        <td><span class="badge badge--cat">{{ email.classification.category }}</span></td>
+        <td><span class="badge badge--sent badge--{{ email.sentiment.sentiment|lower }}">{{ email.sentiment.label_emoji }} {{ email.sentiment.sentiment }}</span></td>
+        <td><span class="badge badge--pri badge--pri-{{ email.priority.priority|lower }}">{{ email.priority.priority }}</span></td>
+        <td class="row-actions">
+          <a href="{{ url_for('main.email_detail', email_id=email.id) }}" class="btn btn--sm btn--outline">View</a>
+          <button class="btn btn--sm btn--outline" onclick="toggleDetail('det-{{ loop.index }}')">Details</button>
+          <button class="btn btn--sm btn--danger" onclick="deleteEmail('{{ email.id }}')">✕</button>
+        </td>
+      </tr>
+      <tr id="det-{{ loop.index }}" class="detail-row" style="display:none;">
+        <td colspan="8">
+          <div class="detail-expand">
+            <div class="de-cols">
+              <div class="de-col"><strong>Email Body</strong><p>{{ email.body|truncate(300) }}</p></div>
+              <div class="de-col">
+                <strong>NLP Insights</strong>
+                <div class="de-tags">
+                  <span>Tokens: {{ email.preprocessed.token_count }}</span>
+                  <span>Confidence: {{ (email.classification.confidence*100)|int }}%</span>
+                  <span>Priority Score: {{ email.priority.priority_score }}/100</span>
+                </div>
+                {% if email.priority.triggers %}
+                <div class="de-triggers">Triggers: {% for t in email.priority.triggers %}<span class="trigger-tag">{{ t }}</span>{% endfor %}</div>
+                {% endif %}
+              </div>
+              <div class="de-col">
+                <strong>Suggested Response</strong>
+                {% if email.suggestions %}<pre class="de-response">{{ email.suggestions[0].body|truncate(400) }}</pre>{% endif %}
+              </div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}<a href="{{ url_for('main.dashboard',category=filter_category,priority=filter_priority,sentiment=filter_sentiment,sort=sort_by,page=page-1) }}" class="btn btn--outline btn--sm">← Prev</a>{% endif %}
+  <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}<a href="{{ url_for('main.dashboard',category=filter_category,priority=filter_priority,sentiment=filter_sentiment,sort=sort_by,page=page+1) }}" class="btn btn--outline btn--sm">Next →</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">📭</div><h3>No emails found</h3>
+  <p>{% if filter_category!='All' or filter_priority!='All' or filter_sentiment!='All' %}
+  No emails match your filters. <a href="{{ url_for('main.dashboard') }}">Reset filters</a>
+  {% else %}No emails yet. <a href="{{ url_for('main.analyze') }}">Analyze your first email</a> or
+  <button onclick="loadSamples()" class="btn btn--outline btn--sm">load sample data</button>.{% endif %}</p>
+</div>
+{% endif %}
+</div>
+
+<script>
+function toggleDetail(id) { const r=document.getElementById(id); r.style.display=r.style.display==='none'?'table-row':'none'; }
+
+async function deleteEmail(id) {
+  if (!confirm(`Delete email #${id}?`)) return;
+  const res = await fetch(`/api/emails/${id}`, {method:'DELETE'});
+  if (res.ok) window.location.reload();
+  else alert('Delete failed.');
+}
+async function loadSamples() {
+  const btn=event.target; btn.textContent='Loading...'; btn.disabled=true;
+  const res=await fetch('/api/load-samples',{method:'POST'});
+  const d=await res.json(); alert(d.message); window.location.reload();
+}
+async function clearEmails() {
+  if (!confirm('Delete ALL emails from the database? Cannot be undone.')) return;
+  await fetch('/api/clear',{method:'POST'}); window.location.reload();
+}
+async function runSearch() {
+  const q=document.getElementById('searchInput').value.trim(); if (!q) return;
+  const res=await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const data=await res.json();
+  document.getElementById('mainTable').style.display='none';
+  document.getElementById('clearSearchBtn').style.display='inline-flex';
+  const c=document.getElementById('searchResultsBody');
+  if (!data.emails.length) { c.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div><h3>No results</h3></div>'; }
+  else {
+    c.innerHTML=`<p style="color:var(--text-muted);margin-bottom:1rem;">${data.total} result(s) for "<strong>${q}</strong>"</p>
+    <div class="email-table-wrap"><table class="email-table"><thead><tr><th>ID</th><th>Time</th><th>Sender</th><th>Subject</th><th>Category</th><th>Sentiment</th><th>Priority</th><th></th></tr></thead><tbody>`+
+    data.emails.map(e=>`<tr class="email-row email-row--${e.priority.priority.toLowerCase()}">
+      <td><code>#${e.id}</code></td><td><small>${e.timestamp}</small></td>
+      <td>${e.sender.substring(0,25)}</td><td>${e.subject.substring(0,50)}</td>
+      <td><span class="badge badge--cat">${e.classification.category}</span></td>
+      <td><span class="badge badge--sent badge--${e.sentiment.sentiment.toLowerCase()}">${e.sentiment.label_emoji} ${e.sentiment.sentiment}</span></td>
+      <td><span class="badge badge--pri badge--pri-${e.priority.priority.toLowerCase()}">${e.priority.priority}</span></td>
+      <td><a href="/email/${e.id}" class="btn btn--sm btn--outline">View</a></td></tr>`).join('')+
+    '</tbody></table></div>';
+  }
+  document.getElementById('searchResults').style.display='block';
+}
+function clearSearch() {
+  document.getElementById('searchInput').value='';
+  document.getElementById('searchResults').style.display='none';
+  document.getElementById('mainTable').style.display='block';
+  document.getElementById('clearSearchBtn').style.display='none';
+}
+document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+</script>
+{% endblock %}
