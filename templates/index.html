@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}EmailIQ – Home{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">NLP + Machine Learning</div>
+    <h1 class="hero-title">Customer Service<br><span class="text-accent">Email Intelligence</span></h1>
+    <p class="hero-subtitle">
+      Welcome back, <strong>{{ session.get('full_name') or session.get('username') }}</strong>!
+      Automatically classify, analyze sentiment, detect priority, and generate smart reply suggestions.
+    </p>
+    <div class="hero-actions">
+      <a href="{{ url_for('main.analyze') }}"   class="btn btn--primary">⚡ Analyze an Email</a>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline">📊 View Dashboard</a>
+    </div>
+  </div>
+  <div class="hero-visual">
+    <div class="feature-cards">
+      <div class="feat-card feat-card--blue"><span>📂</span><strong>Classify</strong><small>5 categories</small></div>
+      <div class="feat-card feat-card--green"><span>💬</span><strong>Sentiment</strong><small>Pos / Neu / Neg</small></div>
+      <div class="feat-card feat-card--orange"><span>🔥</span><strong>Priority</strong><small>High / Med / Low</small></div>
+      <div class="feat-card feat-card--purple"><span>✉️</span><strong>Respond</strong><small>Auto suggestions</small></div>
+    </div>
+  </div>
+</section>
+
+{% if stats.total > 0 %}
+<section class="stats-bar">
+  <div class="stat"><span class="stat-num">{{ stats.total }}</span><span class="stat-label">Emails Analyzed</span></div>
+  <div class="stat"><span class="stat-num text-danger">{{ stats.high }}</span><span class="stat-label">High Priority</span></div>
+  <div class="stat"><span class="stat-num text-warning">{{ stats.medium }}</span><span class="stat-label">Medium Priority</span></div>
+  <div class="stat"><span class="stat-num text-success">{{ stats.low }}</span><span class="stat-label">Low Priority</span></div>
+  <div class="stat"><span class="stat-num text-danger">{{ stats.negative }}</span><span class="stat-label">Negative Sentiment</span></div>
+</section>
+{% endif %}
+
+<section class="pipeline-section">
+  <h2 class="section-title">How It Works</h2>
+  <div class="pipeline-steps">
+    <div class="step"><div class="step-num">01</div><div class="step-icon">📥</div><h3>Input Email</h3><p>Paste a customer email subject and body.</p></div>
+    <div class="step-arrow">→</div>
+    <div class="step"><div class="step-num">02</div><div class="step-icon">🔧</div><h3>Preprocess</h3><p>Clean, tokenize, and remove stop words.</p></div>
+    <div class="step-arrow">→</div>
+    <div class="step"><div class="step-num">03</div><div class="step-icon">🤖</div><h3>ML Analysis</h3><p>Classify category, sentiment, and priority.</p></div>
+    <div class="step-arrow">→</div>
+    <div class="step"><div class="step-num">04</div><div class="step-icon">💡</div><h3>Suggest Reply</h3><p>Get a professional response template.</p></div>
+  </div>
+</section>
+
+<section class="quick-start">
+  <h2 class="section-title">Quick Actions</h2>
+  <div class="start-cards">
+    <div class="start-card">
+      <h3>Load Sample Data</h3>
+      <p>Load 25 pre-built emails to explore the dashboard instantly.</p>
+      <button class="btn btn--outline" onclick="loadSamples()">Load Sample Emails</button>
+    </div>
+    <div class="start-card">
+      <h3>Analyze an Email</h3>
+      <p>Paste any customer email and get full NLP analysis.</p>
+      <a href="{{ url_for('main.analyze') }}" class="btn btn--primary">Start Analyzing</a>
+    </div>
+    <div class="start-card">
+      <h3>API Reference</h3>
+      <p>Integrate via REST API. All endpoints require a valid session.</p>
+      <a href="#api-docs" class="btn btn--outline">View Docs</a>
+    </div>
+  </div>
+</section>
+
+<section class="api-docs" id="api-docs">
+  <h2 class="section-title">API Reference</h2>
+  <div class="api-table-wrap">
+    <table class="api-table">
+      <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge--blue">POST</span></td><td><code>/api/analyze</code></td><td>Analyze &amp; save one email</td></tr>
+        <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/emails</code></td><td>List all emails (filterable)</td></tr>
+        <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/emails/&lt;id&gt;</code></td><td>Get one email by ID</td></tr>
+        <tr><td><span class="badge badge--red">DELETE</span></td><td><code>/api/emails/&lt;id&gt;</code></td><td>Delete one email</td></tr>
+        <tr><td><span class="badge badge--blue">POST</span></td><td><code>/api/load-samples</code></td><td>Load 25 demo emails</td></tr>
+        <tr><td><span class="badge badge--red">POST</span></td><td><code>/api/clear</code></td><td>Clear all emails</td></tr>
+        <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/stats</code></td><td>Dashboard statistics</td></tr>
+        <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/search?q=...</code></td><td>Full-text search</td></tr>
+        <tr><td><span class="badge badge--green">GET</span></td><td><code>/api/audit-log</code></td><td>Recent audit entries</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+async function loadSamples() {
+  const btn = event.target;
+  btn.textContent = "Loading..."; btn.disabled = true;
+  try {
+    const res  = await fetch("/api/load-samples", { method: "POST" });
+    const data = await res.json();
+    btn.textContent = `✅ ${data.message}`;
+    setTimeout(() => window.location.href = "/dashboard", 1200);
+  } catch {
+    btn.textContent = "Error – try again"; btn.disabled = false;
+  }
+}
+</script>
+{% endblock %}
