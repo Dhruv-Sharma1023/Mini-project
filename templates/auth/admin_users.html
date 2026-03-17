@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}User Management – EmailIQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">User Management</h1>
+    <p class="page-subtitle">
+      Data saved in: <code style="background:var(--bg-input);padding:2px 8px;border-radius:4px;font-size:.82rem;color:var(--accent);">instance/emailiq_dev.db → users table</code>
+    </p>
+  </div>
+  <div class="page-actions">
+    <button onclick="fetchUsers()" class="btn btn--outline">🔄 Refresh</button>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline">← Dashboard</a>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="alert alert--{{ 'error' if cat == 'error' else 'success' }}" style="margin-bottom:1rem;">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<!-- DB Info Banner -->
+<div class="db-info-banner">
+  <div class="dib-col">
+    <span class="dib-icon">🗄️</span>
+    <div>
+      <div class="dib-title">Storage Location</div>
+      <div class="dib-value"><code>instance/emailiq_dev.db</code></div>
+    </div>
+  </div>
+  <div class="dib-col">
+    <span class="dib-icon">📋</span>
+    <div>
+      <div class="dib-title">Table Name</div>
+      <div class="dib-value"><code>users</code></div>
+    </div>
+  </div>
+  <div class="dib-col">
+    <span class="dib-icon">🔑</span>
+    <div>
+      <div class="dib-title">Password Storage</div>
+      <div class="dib-value">SHA-256 hashed (never plain text)</div>
+    </div>
+  </div>
+  <div class="dib-col">
+    <span class="dib-icon">🔗</span>
+    <div>
+      <div class="dib-title">Fetch API</div>
+      <div class="dib-value"><code>GET /api/users</code></div>
+    </div>
+  </div>
+</div>
+
+<!-- Stats row -->
+<div id="userStats" style="display:flex;gap:1rem;margin-bottom:1.5rem;"></div>
+
+<!-- Create User -->
+<div class="detail-card" style="margin-bottom:2rem;">
+  <h3 style="font-family:var(--font-head);font-size:1rem;margin-bottom:1rem;">➕ Create New User</h3>
+  <form method="POST" action="{{ url_for('auth.admin_create_user') }}"
+        style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.75rem;align-items:end;">
+    <div><label class="form-label">Username *</label>
+      <input type="text" name="username" class="form-input" required placeholder="e.g. agent3"></div>
+    <div><label class="form-label">Password *</label>
+      <input type="password" name="password" class="form-input" required minlength="6" placeholder="min 6 chars"></div>
+    <div><label class="form-label">Full Name</label>
+      <input type="text" name="full_name" class="form-input" placeholder="Optional"></div>
+    <div><label class="form-label">Role</label>
+      <select name="role" class="filter-select">
+        <option value="agent">Agent</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn--primary" style="margin-bottom:0;">Create User</button>
+  </form>
+</div>
+
+<!-- Search bar -->
+<div class="search-box" style="margin-bottom:1rem;">
+  <input type="text" id="userSearch" class="form-input" style="width:280px;"
+         placeholder="🔍  Filter users by name or role..." oninput="filterTable()">
+  <button onclick="fetchUsers()" class="btn btn--outline btn--sm">🔄 Reload from DB</button>
+  <button onclick="copyApiOutput()" class="btn btn--outline btn--sm">📋 Copy JSON</button>
+</div>
+
+<!-- Users table (populated by JS from /api/users) -->
+<div class="email-table-wrap" id="usersTableWrap">
+  <table class="email-table" id="usersTable">
+    <thead>
+      <tr>
+        <th>ID</th><th>Username</th><th>Full Name</th><th>Role</th>
+        <th>Created At</th><th>Last Login</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="usersTableBody">
+      <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">
+        Loading users from database...
+      </td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Raw JSON viewer -->
+<div style="margin-top:2rem;">
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.75rem;">
+    <h3 style="font-family:var(--font-head);font-size:1rem;">📡 Live API Response  <code style="font-size:.8rem;color:var(--text-muted);">GET /api/users</code></h3>
+    <button onclick="toggleJson()" class="btn btn--outline btn--sm" id="toggleJsonBtn">Show JSON</button>
+  </div>
+  <div id="jsonViewer" style="display:none;">
+    <pre id="jsonOutput" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;font-size:.8rem;color:var(--success);overflow-x:auto;max-height:400px;overflow-y:auto;"></pre>
+  </div>
+</div>
+
+<!-- Reset password modal form (hidden) -->
+<form id="resetPwForm" method="POST" style="display:none;">
+  <input type="hidden" name="new_password" id="resetPwInput">
+</form>
+
+<style>
+.db-info-banner {
+  display:flex; gap:1rem; background:var(--bg-card); border:1px solid var(--border);
+  border-radius:var(--radius-lg); padding:1.25rem 1.75rem; margin-bottom:1.5rem;
+  flex-wrap:wrap;
+}
+.dib-col { display:flex; align-items:center; gap:.75rem; flex:1; min-width:180px; }
+.dib-icon { font-size:1.5rem; }
+.dib-title { font-size:.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
+.dib-value { font-size:.85rem; color:var(--text-primary); margin-top:2px; }
+.user-stat-card {
+  background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius);
+  padding:.75rem 1.25rem; text-align:center; min-width:100px;
+}
+.user-stat-num { font-family:var(--font-head); font-size:1.6rem; font-weight:700; }
+.user-stat-lbl { font-size:.75rem; color:var(--text-muted); }
+</style>
+
+<script>
+let allUsers = [];
+
+async function fetchUsers() {
+  try {
+    const res  = await fetch('/api/users');
+    const data = await res.json();
+    allUsers   = data.users;
+    renderStats(data);
+    renderTable(allUsers);
+    document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+  } catch(e) {
+    document.getElementById('usersTableBody').innerHTML =
+      `<tr><td colspan="7" style="color:var(--danger);text-align:center;padding:1rem;">Error loading users: ${e.message}</td></tr>`;
+  }
+}
+
+function renderStats(data) {
+  const admins = data.users.filter(u => u.role === 'admin').length;
+  const agents = data.users.filter(u => u.role === 'agent').length;
+  const loggedIn = data.users.filter(u => u.last_login).length;
+  document.getElementById('userStats').innerHTML = `
+    <div class="user-stat-card" style="border-top:3px solid var(--accent)">
+      <div class="user-stat-num">${data.total}</div><div class="user-stat-lbl">Total Users</div></div>
+    <div class="user-stat-card" style="border-top:3px solid var(--danger)">
+      <div class="user-stat-num">${admins}</div><div class="user-stat-lbl">Admins</div></div>
+    <div class="user-stat-card" style="border-top:3px solid var(--success)">
+      <div class="user-stat-num">${agents}</div><div class="user-stat-lbl">Agents</div></div>
+    <div class="user-stat-card" style="border-top:3px solid var(--warning)">
+      <div class="user-stat-num">${loggedIn}</div><div class="user-stat-lbl">Ever Logged In</div></div>
+  `;
+}
+
+function renderTable(users) {
+  const me = {{ session.get('user_id') }};
+  const tbody = document.getElementById('usersTableBody');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">No users found.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr id="urow-${u.id}">
+      <td><code>${u.id}</code></td>
+      <td><strong>${u.username}</strong>${u.id === me ? ' <span class="badge badge--blue" style="font-size:.7rem;">You</span>' : ''}</td>
+      <td>${u.full_name || '<span style="color:var(--text-muted);">—</span>'}</td>
+      <td><span class="badge ${u.role === 'admin' ? 'badge--red' : 'badge--blue'}">${u.role}</span></td>
+      <td><small>${u.created_at ? u.created_at.substring(0,16) : '—'}</small></td>
+      <td><small>${u.last_login ? u.last_login.substring(0,16) : '<span style="color:var(--text-muted);">Never</span>'}</small></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn--sm btn--outline" onclick="viewUser(${u.id})">View</button>
+        <button class="btn btn--sm btn--outline" onclick="promptReset(${u.id},'${u.username}')">Reset PW</button>
+        ${u.id !== me ? `<button class="btn btn--sm btn--danger" onclick="deleteUser(${u.id},'${u.username}')">Delete</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('userSearch').value.toLowerCase();
+  const filtered = q
+    ? allUsers.filter(u => u.username.toLowerCase().includes(q) ||
+                           (u.full_name||'').toLowerCase().includes(q) ||
+                           u.role.toLowerCase().includes(q))
+    : allUsers;
+  renderTable(filtered);
+}
+
+async function viewUser(id) {
+  const res  = await fetch(`/api/users/${id}`);
+  const u    = await res.json();
+  alert(`User Detail (from /api/users/${id}):\n\n` +
+        Object.entries(u).map(([k,v]) => `${k}: ${v ?? '—'}`).join('\n'));
+}
+
+function promptReset(id, username) {
+  const pw = prompt(`Enter new password for "${username}" (min 6 chars):`);
+  if (!pw || pw.length < 6) { if (pw !== null) alert('Password must be at least 6 characters.'); return; }
+  const form = document.getElementById('resetPwForm');
+  form.action = `/admin/users/${id}/reset-password`;
+  document.getElementById('resetPwInput').value = pw;
+  form.submit();
+}
+
+async function deleteUser(id, username) {
+  if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+  const form = document.createElement('form');
+  form.method = 'POST'; form.action = `/admin/users/${id}/delete`;
+  document.body.appendChild(form); form.submit();
+}
+
+function toggleJson() {
+  const v = document.getElementById('jsonViewer');
+  const b = document.getElementById('toggleJsonBtn');
+  const show = v.style.display === 'none';
+  v.style.display = show ? 'block' : 'none';
+  b.textContent   = show ? 'Hide JSON' : 'Show JSON';
+}
+
+function copyApiOutput() {
+  const text = document.getElementById('jsonOutput').textContent;
+  if (!text.trim()) { alert('Click "Reload from DB" first to fetch data.'); return; }
+  navigator.clipboard.writeText(text).then(() => alert('JSON copied to clipboard!'));
+}
+
+// Load on page ready
+fetchUsers();
+</script>
+{% endblock %}
