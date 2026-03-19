@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Audit Log – EmailIQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">
+      {% if is_admin %}
+        🔐 Full Audit Log
+      {% else %}
+        📋 My Activity Log
+      {% endif %}
+    </h1>
+    <p class="page-subtitle">
+      {% if is_admin %}
+        All database operations across every user — {{ logs|length }} entries shown
+      {% else %}
+        Your own actions only — {{ logs|length }} entries shown
+        &nbsp;·&nbsp;
+        <span style="color:var(--text-muted);font-size:.82rem;">
+          (Admins can view all users' activity)
+        </span>
+      {% endif %}
+    </p>
+  </div>
+  <a href="{{ url_for('main.dashboard') }}" class="btn btn--outline">← Dashboard</a>
+</div>
+
+<!-- Scope notice for agents -->
+{% if not is_admin %}
+<div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);
+            border-radius:var(--radius);padding:12px 18px;margin-bottom:1.5rem;
+            display:flex;align-items:center;gap:.75rem;font-size:.88rem;color:var(--accent);">
+  <span style="font-size:1.2rem;">ℹ️</span>
+  <span>You are viewing your own activity only.
+  Only administrators can view the complete system audit log.</span>
+</div>
+{% endif %}
+
+{% if logs %}
+<div class="email-table-wrap">
+  <table class="email-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Timestamp</th>
+        <th>Action</th>
+        {% if is_admin %}<th>User</th>{% endif %}
+        <th>Email ID</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td><code style="color:var(--text-muted);">{{ log.id }}</code></td>
+        <td><small>{{ log.created_at }}</small></td>
+        <td>
+          <span class="badge
+            {% if log.action == 'INSERT' %}badge--green
+            {% elif log.action in ['DELETE','CLEAR'] %}badge--red
+            {% else %}badge--blue{% endif %}">
+            {{ log.action }}
+          </span>
+        </td>
+        {% if is_admin %}
+        <td>
+          <small>
+            {% if log.username %}
+              <span style="color:var(--text-primary);">{{ log.username }}</span>
+            {% else %}
+              <span style="color:var(--text-muted);">API / System</span>
+            {% endif %}
+          </small>
+        </td>
+        {% endif %}
+        <td>
+          {% if log.email_id %}
+            <a href="{{ url_for('main.email_detail', email_id=log.email_id) }}"
+               class="email-id" style="color:var(--accent);text-decoration:none;">
+              #{{ log.email_id }}
+            </a>
+          {% else %}
+            <span style="color:var(--text-subtle);">—</span>
+          {% endif %}
+        </td>
+        <td><small style="color:var(--text-muted);">{{ log.details or '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">📋</div>
+  <h3>No activity yet</h3>
+  <p>
+    {% if is_admin %}
+      No database operations have been recorded yet.
+    {% else %}
+      You haven't analyzed or deleted any emails yet.
+      <a href="{{ url_for('main.analyze') }}">Analyze your first email</a> to see activity here.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+{% endblock %}
